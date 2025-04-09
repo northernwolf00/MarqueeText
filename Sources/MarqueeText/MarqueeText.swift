@@ -56,39 +56,52 @@ public struct MarqueeText: View {
                     .offset(x: -leftFade)
                 } else {
                     // MARK: - Non-scrolling version
-                    Text(text)
-                        .font(.init(font))
-                        .onChange(of: text) { _ in
-                            self.animate = false // No scrolling needed
-                        }
-                        .frame(
-                            minWidth: 0,
-                            maxWidth: .infinity,
-                            minHeight: 0,
-                            maxHeight: .infinity,
-                            alignment: alignment // use alignment only if not scrolling
-                        )
-                }
-            }
-            .onAppear {
-                // Trigger scrolling if needed
-                self.animate = needsScrolling
-            }
-            .onChange(of: text) { newValue in
-                let newStringWidth = newValue.widthOfString(usingFont: font)
-                if newStringWidth > geo.size.width {
-                    // Stop the old animation first
-                    self.animate = false
                     
-                    // Kick off a new animation on the next runloop
-                    DispatchQueue.main.async {
-                        self.animate = true
+                    if #available(iOS 14.0, *) {
+                        Text(text)
+                            .font(.init(font))
+                            .onChange(of: text) { _ in
+                                self.animate = false // No scrolling needed
+                            }
+                            .frame(
+                                minWidth: 0,
+                                maxWidth: .infinity,
+                                minHeight: 0,
+                                maxHeight: .infinity,
+                                alignment: alignment // use alignment only if not scrolling
+                            )
+                    } else {
+                        Text(text)
+                            .font(.init(font))
+                            .frame(
+                                minWidth: 0,
+                                maxWidth: .infinity,
+                                minHeight: 0,
+                                maxHeight: .infinity,
+                                alignment: alignment
+                            )
                     }
-                } else {
-                    self.animate = false
                 }
-            }
-        }
+                    .onAppear {
+                        // Trigger scrolling if needed
+                        self.animate = needsScrolling
+                    }
+                if #available(iOS 14.0, *) {
+                    .onChange(of: text) { newValue in
+                        let newStringWidth = newValue.widthOfString(usingFont: font)
+                        if newStringWidth > geo.size.width {
+                            // Stop the old animation first
+                            self.animate = false
+                            
+                            // Kick off a new animation on the next runloop
+                            DispatchQueue.main.async {
+                                self.animate = true
+                            }
+                        } else {
+                            self.animate = false
+                        }
+                    }
+                }}
         .frame(height: stringHeight)
         .frame(maxWidth: isCompact ? stringWidth : nil)
         .onDisappear {
