@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 public struct MarqueeText: View {
     public var text: String
@@ -9,22 +10,23 @@ public struct MarqueeText: View {
     public var alignment: Alignment
     
     @State private var animate = false
+    @State private var previousText = ""
     private var isCompact = false
     
     public var body: some View {
         let stringWidth  = text.widthOfString(usingFont: font)
         let stringHeight = text.heightOfString(usingFont: font)
-
+        
         let animation = Animation
             .linear(duration: Double(stringWidth) / 30)
             .delay(startDelay)
             .repeatForever(autoreverses: false)
-
+        
         let nullAnimation = Animation.linear(duration: 0)
-
+        
         return GeometryReader { geo in
             let needsScrolling = (stringWidth > geo.size.width)
-
+            
             ZStack {
                 if needsScrolling {
                     makeMarqueeTexts(
@@ -43,7 +45,10 @@ public struct MarqueeText: View {
                     )
                     .offset(x: leftFade)
                     .mask(
-                        fadeMask(leftFade: leftFade, rightFade: rightFade)
+                        fadeMask(
+                            leftFade: leftFade,
+                            rightFade: rightFade
+                        )
                     )
                     .frame(width: geo.size.width + leftFade)
                     .offset(x: -leftFade)
@@ -57,33 +62,28 @@ public struct MarqueeText: View {
                             maxHeight: .infinity,
                             alignment: alignment
                         )
-                        .onChange(of: text) { _ in
-                            self.animate = false
-                        }
                 }
             }
             .onAppear {
                 self.animate = needsScrolling
             }
-            .onChange(of: text) { newValue in
-                let newStringWidth = newValue.widthOfString(usingFont: font)
-                if newStringWidth > geo.size.width {
-                    self.animate = false
-                    DispatchQueue.main.async {
-                        self.animate = true
-                    }
-                } else {
-                    self.animate = false
-                }
+            .onDisappear {
+                self.animate = false
             }
-        }
-        .frame(height: stringHeight)
-        .frame(maxWidth: isCompact ? stringWidth : nil)
-        .onDisappear {
-            self.animate = false
+            .frame(height: stringHeight)
+            .frame(maxWidth: isCompact ? stringWidth : nil)
+            .modifier(TextChangeObserver(
+                text: text,
+                font: font,
+                geoWidth: geo.size.width,
+                animate: $animate,
+                previousText: $previousText
+            ))
         }
     }
-
+    
+    // MARK: - Marquee pair of texts
+    @ViewBuilder
     private func makeMarqueeTexts(
         stringWidth: CGFloat,
         stringHeight: CGFloat,
@@ -91,14 +91,14 @@ public struct MarqueeText: View {
         animation: Animation,
         nullAnimation: Animation
     ) -> some View {
-        ZStack {
+        Group {
             Text(text)
                 .lineLimit(1)
                 .font(.init(font))
                 .offset(x: animate ? -stringWidth - stringHeight * 2 : 0)
                 .animation(animate ? animation : nullAnimation, value: animate)
                 .fixedSize(horizontal: true, vertical: false)
-
+            
             Text(text)
                 .lineLimit(1)
                 .font(.init(font))
@@ -107,35 +107,38 @@ public struct MarqueeText: View {
                 .fixedSize(horizontal: true, vertical: false)
         }
     }
-
+    
+    // MARK: - Fade mask
+    @ViewBuilder
     private func fadeMask(leftFade: CGFloat, rightFade: CGFloat) -> some View {
         HStack(spacing: 0) {
             Rectangle().frame(width: 2).opacity(0)
-
+            
             LinearGradient(
                 gradient: Gradient(colors: [Color.black.opacity(0), Color.black]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
             .frame(width: leftFade)
-
+            
             LinearGradient(
                 gradient: Gradient(colors: [Color.black, Color.black]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
-
+            
             LinearGradient(
                 gradient: Gradient(colors: [Color.black, Color.black.opacity(0)]),
                 startPoint: .leading,
                 endPoint: .trailing
             )
             .frame(width: rightFade)
-
+            
             Rectangle().frame(width: 2).opacity(0)
         }
     }
-
+    
+    // MARK: - Initializer
     public init(
         text: String,
         font: UIFont,
@@ -151,26 +154,53 @@ public struct MarqueeText: View {
         self.startDelay = startDelay
         self.alignment = alignment ?? .topLeading
     }
-
+    
     public func makeCompact(_ compact: Bool = true) -> MarqueeText {
-        var copy = self
-        copy.isCompact = compact
-        return copy
+        var view = self
+        view.isCompact = compact
+        return view
     }
 }
 
-// MARK: - String Extensions
-
+// MARK: - String extension for width/height
 extension String {
     func widthOfString(usingFont font: UIFont) -> CGFloat {
         let fontAttributes = [NSAttributedString.Key.font: font]
         let size = self.size(withAttributes: fontAttributes)
         return size.width
     }
-
+    
     func heightOfString(usingFont font: UIFont) -> CGFloat {
         let fontAttributes = [NSAttributedString.Key.font: font]
         let size = self.size(withAttributes: fontAttributes)
         return size.height
+    }
+}
+
+// MARK: - Text Change Observer Modifier
+struct TextChangeObserver: ViewModifier {
+    var text: String
+    var font: UIFont
+    var geoWidth: CGFloat
+    
+    @Binding var animate: Bool
+    @Binding var previousText: String
+    
+    func body(content: Content) -> some View {
+        content
+            .onReceive(Just(text)) { newText in
+                if newText != previousText {
+                    previousText = newText
+                    let newWidth = newText.widthOfString(usingFont: font)
+                    if newWidth > geoWidth {
+                        animate = false
+                        DispatchQueue.main.async {
+                            animate = true
+                        }
+                    } else {
+                        animate = false
+                    }
+                }
+            }
     }
 }
